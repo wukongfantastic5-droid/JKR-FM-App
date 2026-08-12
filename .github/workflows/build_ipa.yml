@@ -22,6 +22,15 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Create .env for build
+        shell: bash
+        run: |
+          printf 'GITHUB_TOKEN=%s\nREPO_OWNER=%s\nREPO_NAME=%s\n' \
+            "${{ secrets.JKR_GITHUB_TOKEN }}" \
+            "${{ secrets.JKR_REPO_OWNER }}" \
+            "${{ secrets.JKR_REPO_NAME }}" > .env
+          cat .env
+
       - name: Install dependencies
         run: flutter pub get
 
