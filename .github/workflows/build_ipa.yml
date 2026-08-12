@@ -1,0 +1,43 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ 'lib/**', 'ios/**', 'pubspec.yaml', 'assets/**', 'test/**' ]
+
+jobs:
+  build-ipa:
+    name: Build unsigned IPA on macOS
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build IPA (no codesign)
+        run: flutter build ipa --release --no-codesign
+
+      - name: Create release + upload IPA
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ipa-${{ github.run_number }}
+          name: "JKR FM Guide iOS - build #${{ github.run_number }}"
+          body: |
+            Unsigned IPA built on GitHub macOS runners.
+            Install on iPhone via AltStore (AltServer on Windows/Mac) or Xcode with your Apple ID.
+          files: build/ios/ipa/*.ipa
+          fail_on_unmatched_files: false
