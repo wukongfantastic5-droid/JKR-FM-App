@@ -81,7 +81,7 @@ Future<int> runSelfTest() async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    await dotenv.load();
+    await dotenv.load(isOptional: true);
   } catch (e) {
     debugPrint('dotenv load skipped: $e');
   }

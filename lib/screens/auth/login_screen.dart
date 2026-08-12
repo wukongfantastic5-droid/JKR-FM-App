@@ -126,6 +126,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!down) {
       _step('Verifying technician/contractor account...');
+      // Any unexpected error here must never block the admin (Firebase)
+      // login below, so the whole GitHub-check section is best-effort.
+      try {
       // GitHub lookups get a short budget so a slow connection can never
       // block the admin (Firebase) login below.
       dynamic tech;
@@ -154,6 +157,9 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => _loading = false);
         SessionService.loginAsContractor(context, contractor);
         return;
+      }
+      } catch (e) {
+        debugPrint('GitHub login checks failed (continuing to Firebase): $e');
       }
     }
 
@@ -316,7 +322,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Web build 2026-08-12 16:05',
+                    'Web build 2026-08-12 21:40',
                     style: TextStyle(color: Colors.white38, fontSize: 11),
                   ),
                 ],

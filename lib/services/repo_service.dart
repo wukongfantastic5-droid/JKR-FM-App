@@ -90,9 +90,13 @@ class RepoService {
   static const String _defaultRepo = 'Database-JKR';
 
   static Future<void> ensureEnv() async {
-    if (_token.isEmpty) _token = dotenv.env['GITHUB_TOKEN'] ?? '';
-    if (_owner.isEmpty) _owner = dotenv.env['REPO_OWNER'] ?? '';
-    if (_repo.isEmpty) _repo = dotenv.env['REPO_NAME'] ?? '';
+    // dotenv.env throws NotInitializedError if the .env asset is absent
+    // (web builds ship without it on purpose), so only read it when loaded.
+    if (dotenv.isInitialized) {
+      if (_token.isEmpty) _token = dotenv.env['GITHUB_TOKEN'] ?? '';
+      if (_owner.isEmpty) _owner = dotenv.env['REPO_OWNER'] ?? '';
+      if (_repo.isEmpty) _repo = dotenv.env['REPO_NAME'] ?? '';
+    }
     if (_token.isEmpty) {
       final prefs = await SharedPreferences.getInstance();
       if (_token.isEmpty) _token = prefs.getString('repo_token') ?? '';
