@@ -22,6 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _loading = false;
   bool _remember = false;
+  String _loginStep = '';
 
   @override
   void initState() {
@@ -85,18 +86,54 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _loading = true;
-    });
     final email = _emailCtrl.text.trim();
     final pass = _passCtrl.text;
+    setState(() {
+      _loading = true;
+      _loginStep = 'Checking server status...';
+    });
+    try {
+      await _attempt(email, pass)
+          .timeout(const Duration(seconds: 45));
+    } catch (e) {
+      final step = _loginStep.isEmpty ? 'startup' : _loginStep;
+      debugPrint('login failed at [$step]: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Login failed at "$step". Please try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _step(String s) {
+    if (mounted) setState(() => _loginStep = s);
+  }
+
+  Future<void> _attempt(String email, String pass) async {
+    // Maintenance, technician and contractor lookups all run in parallel.
+    final downF = MaintenanceService.load();
+    final techF = TechService.techLogin(email, pass);
+    final contF = ContractorService.load();
 
     // Maintenance gate: when offline only the admin (Firebase) login works.
-    final down = await MaintenanceService.load();
+    // If it can't be checked quickly, assume online.
+    final down = await downF
+        .timeout(const Duration(seconds: 8), onTimeout: () => false);
 
-    // Try GitHub technician database first
     if (!down) {
-      final tech = await TechService.techLogin(email, pass);
+      _step('Verifying technician/contractor account...');
+      // GitHub lookups get a short budget so a slow connection can never
+      // block the admin (Firebase) login below.
+      dynamic tech;
+      try {
+        tech = await techF.timeout(const Duration(seconds: 8));
+      } catch (_) {
+        tech = null;
+      }
       if (tech != null) {
         await _persistRemember(email, pass);
         if (!mounted) return;
@@ -107,7 +144,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Try contractor accounts (email type: HITACHI@gmail.com, default 123456)
       await RepoService.ensureEnv();
-      await ContractorService.load();
+      try {
+        await contF.timeout(const Duration(seconds: 8));
+      } catch (_) {}
       final contractor = ContractorService.contractorLogin(email, pass);
       if (contractor != null) {
         await _persistRemember(email, pass);
@@ -118,8 +157,8 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     }
 
+    _step('Signing in...');
     final err = await AuthService.login(email, pass);
-    setState(() => _loading = false);
     if (err != null) {
       if (mounted) {
         if (down) {
@@ -225,8 +264,31 @@ class _LoginScreenState extends State<LoginScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       child: _loading
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('Login', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2)),
+                                const SizedBox(width: 10),
+                                Flexible(
+                                  child: Text(
+                                    _loginStep.isEmpty
+                                        ? 'Please wait...'
+                                        : _loginStep,
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF0D7377)),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : const Text('Login',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 15)),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -251,6 +313,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       eng ? 'Don\'t have account? Register' : 'Takde akaun? Daftar sini',
                       style: const TextStyle(color: Colors.white70),
                     ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Web build 2026-08-12 16:05',
+                    style: TextStyle(color: Colors.white38, fontSize: 11),
                   ),
                 ],
               ),

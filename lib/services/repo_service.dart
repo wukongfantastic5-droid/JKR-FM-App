@@ -84,6 +84,11 @@ class RepoService {
     if (_debug) debugPrint('[RepoService] $msg');
   }
 
+  /// Fallback so web builds (no .env file) work out of the box against the
+  /// live data repo; the token can still be entered via System Check.
+  static const String _defaultOwner = 'wukongfantastic5-droid';
+  static const String _defaultRepo = 'Database-JKR';
+
   static Future<void> ensureEnv() async {
     if (_token.isEmpty) _token = dotenv.env['GITHUB_TOKEN'] ?? '';
     if (_owner.isEmpty) _owner = dotenv.env['REPO_OWNER'] ?? '';
@@ -94,6 +99,8 @@ class RepoService {
       if (_owner.isEmpty) _owner = prefs.getString('repo_owner') ?? '';
       if (_repo.isEmpty) _repo = prefs.getString('repo_name') ?? '';
     }
+    if (_owner.isEmpty) _owner = _defaultOwner;
+    if (_repo.isEmpty) _repo = _defaultRepo;
     _log('Config: token=${_token.isNotEmpty}, owner=$_owner, repo=$_repo');
   }
 
@@ -173,15 +180,30 @@ class RepoService {
   static String get currentOwner => _owner;
   static String get currentRepo => _repo;
 
+  /// Short-lived in-memory cache for content reads (30s TTL) so repeated
+  /// loads (e.g. across screens or logins) don't re-hit the GitHub API.
+  static final Map<String, List<Object>> _readCache = {};
+
   static Future<dynamic> readFile(String path) async {
+    final hit = _readCache[path];
+    if (hit != null &&
+        DateTime.now().difference(hit[0] as DateTime).inSeconds < 30) {
+      return hit[1];
+    }
     final result = await _readFile(path);
-    return result?['content'];
+    final content = result?['content'];
+    if (content != null) _readCache[path] = [DateTime.now(), content];
+    return content;
   }
+
+  static void _dropCache(String path) => _readCache.remove(path);
 
   static Future<bool> writeFile(String path, dynamic data) async {
     await ensureEnv();
     final existing = await _readFile(path);
-    return await _writeFile(path, data, sha: existing?['sha'] as String?);
+    final ok = await _writeFile(path, data, sha: existing?['sha'] as String?);
+    if (ok) _dropCache(path);
+    return ok;
   }
 
   static List<Map<String, dynamic>> get solutions => _solutions;
@@ -189,18 +211,19 @@ class RepoService {
     _slang.map((s) => SlangEntry.fromJson(s)).toList();
 
   static Future<Map<String, dynamic>?> _readFile(String path) async {
-    if (_token.isEmpty || _owner.isEmpty || _repo.isEmpty) return null;
+    if (_owner.isEmpty || _repo.isEmpty) return null;
     final url = 'https://api.github.com/repos/$_owner/$_repo/contents/$path';
+    final headers = {
+      'Accept': 'application/vnd.github.v3+json',
+      if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
+    };
     try {
       final res = await http
           .get(
             Uri.parse(url),
-            headers: {
-              'Authorization': 'Bearer $_token',
-              'Accept': 'application/vnd.github.v3+json'
-            },
+            headers: headers,
           )
-          .timeout(const Duration(seconds: 25));
+          .timeout(const Duration(seconds: 15));
       if (res.statusCode != 200) {
         _logApi('GET', url, res.statusCode,
             note: 'read $path', body: res.body);
@@ -235,12 +258,15 @@ class RepoService {
   /// All blob file paths in the repo whose path starts with [rootPrefix]
   /// (e.g. 'PM_Status/'), via the recursive git trees API.
   static Future<List<String>> listAllFiles(String rootPrefix) async {
-    if (_token.isEmpty || _owner.isEmpty || _repo.isEmpty) return [];
+    if (_owner.isEmpty || _repo.isEmpty) return [];
     final url = 'https://api.github.com/repos/$_owner/$_repo/git/trees/main?recursive=1';
     try {
       final res = await http.get(
         Uri.parse(url),
-        headers: {'Authorization': 'Bearer $_token', 'Accept': 'application/vnd.github.v3+json'},
+        headers: {
+          if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
+          'Accept': 'application/vnd.github.v3+json',
+        },
       );
       _logApi('GET', url, res.statusCode,
           note: 'tree', body: res.statusCode >= 400 ? res.body : null);
@@ -266,7 +292,9 @@ class RepoService {
   static Future<bool> writeRawFile(String path, String base64Content) async {
     await ensureEnv();
     final existing = await _readFile(path);
-    return await _writeRawFile(path, base64Content, sha: existing?['sha'] as String?);
+    final ok = await _writeRawFile(path, base64Content, sha: existing?['sha'] as String?);
+    if (ok) _dropCache(path);
+    return ok;
   }
 
   /// Deletes a file (used when removing an uploaded contractor report etc).
@@ -292,7 +320,10 @@ class RepoService {
       );
       _logApi('DELETE', url, res.statusCode,
           note: 'delete $path', body: res.statusCode >= 400 ? res.body : null);
-      if (res.statusCode == 200) return true;
+      if (res.statusCode == 200) {
+        _dropCache(path);
+        return true;
+      }
       _log('deleteFile($path) FAILED: ${res.body}');
       return false;
     } catch (e) {
@@ -407,7 +438,7 @@ class RepoService {
           'Content-Type': 'application/json',
         },
         body: jsonEncode(body),
-      );
+      ).timeout(const Duration(seconds: 15));
       _logApi('PUT', url, res.statusCode,
           note: 'write $path', body: res.statusCode >= 400 ? res.body : null);
       if (res.statusCode == 200 || res.statusCode == 201) {
@@ -426,7 +457,7 @@ class RepoService {
               'Content-Type': 'application/json',
             },
             body: jsonEncode(body),
-          );
+          ).timeout(const Duration(seconds: 15));
           _logApi('PUT', url, retry.statusCode,
               note: 'write $path (409 retry)',
               body: retry.statusCode >= 400 ? retry.body : null);
@@ -470,7 +501,7 @@ class RepoService {
           'Content-Type': 'application/json',
         },
         body: jsonEncode(body),
-      );
+      ).timeout(const Duration(seconds: 15));
       _log('_writeFile($path) → ${res.statusCode}');
       _logApi('PUT', url, res.statusCode,
           note: 'write $path', body: res.statusCode >= 400 ? res.body : null);
@@ -492,7 +523,7 @@ class RepoService {
               'Content-Type': 'application/json',
             },
             body: jsonEncode(body),
-          );
+          ).timeout(const Duration(seconds: 15));
           _log('_writeFile($path) retry → ${retry.statusCode}');
           _logApi('PUT', url, retry.statusCode,
               note: 'write $path (409 retry)',

@@ -43,5 +43,22 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Always serve the latest build: unregister any old service worker.
+    // The app needs live data from the GitHub API anyway, so offline
+    // caching does more harm than good (stale builds after redeploys).
+    window.addEventListener('load', function () {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          regs.forEach(function (r) {
+            r.unregister();
+            try { caches.keys().then(function (ks) {
+              ks.forEach(function (k) { caches.delete(k); });
+            }); } catch (e) {}
+          });
+        });
+      }
+    });
+  </script>
 </body>
 </html>
