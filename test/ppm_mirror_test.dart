@@ -11,7 +11,12 @@ String fmtDate(DateTime d) =>
 
 void main() {
   test('mirror schedule equals Excel-validated grids 2026-07..2031-12', () async {
-    final raw = File('$tmp\\ppm_new.json').readAsStringSync();
+    final ref = File('$tmp\\ppm_new.json');
+    if (!ref.existsSync()) {
+      markTestSkipped('reference grid data not present (developer machine only)');
+      return;
+    }
+    final raw = ref.readAsStringSync();
     final list = jsonDecode(raw) as List;
     final items = list.map((e) => PpmItem.fromJson(e as Map<String, dynamic>)).toList();
 
