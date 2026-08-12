@@ -60,7 +60,7 @@ class UpdateService {
   }
 
   static bool get isAndroid =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+      defaultTargetPlatform == TargetPlatform.android;
 
   /// Read whatever version the database says we should be on.
   static Future<Map<String, dynamic>?> fetch() async {

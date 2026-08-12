@@ -322,7 +322,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Web build 2026-08-12 21:40',
+                    'JKR FM Guide v1.0.9',
                     style: TextStyle(color: Colors.white38, fontSize: 11),
                   ),
                 ],

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
+    show defaultTargetPlatform, TargetPlatform, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -19,10 +19,9 @@ class DocDeliver {
     String fileName,
     Uint8List bytes,
   ) async {
-    if (kIsWeb ||
-        (defaultTargetPlatform != TargetPlatform.windows &&
-            defaultTargetPlatform != TargetPlatform.linux &&
-            defaultTargetPlatform != TargetPlatform.macOS)) {
+    if (defaultTargetPlatform != TargetPlatform.windows &&
+        defaultTargetPlatform != TargetPlatform.linux &&
+        defaultTargetPlatform != TargetPlatform.macOS) {
       return '';
     }
     try {
@@ -42,15 +41,12 @@ class DocDeliver {
   }
 
   static bool get isMobile =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
+      defaultTargetPlatform == TargetPlatform.android;
 
   static Future<bool> isDesktop() async =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.windows ||
-          defaultTargetPlatform == TargetPlatform.linux ||
-          defaultTargetPlatform == TargetPlatform.macOS);
+      defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.macOS;
 
   /// On mobile: prompt to open the saved document in the browser.
   /// Returns true when the user chose to open it.

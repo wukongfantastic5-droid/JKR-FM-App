@@ -16,7 +16,7 @@ import 'services/update_service.dart';
 import 'services/repo_service.dart';
 import 'services/pm_status_service.dart';
 import 'widgets/app_footer.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 
 /// Console self-test (used on Windows to verify the app talks to the real
 /// GitHub database): set SELFTEST=1 in the environment, run the exe, read
@@ -85,15 +85,12 @@ void main() async {
   } catch (e) {
     debugPrint('dotenv load skipped: $e');
   }
-  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows &&
+  if (defaultTargetPlatform == TargetPlatform.windows &&
       Platform.environment.containsKey('SELFTEST')) {
     exit(await runSelfTest());
   }
   try {
-    if (kIsWeb) {
-      await Firebase.initializeApp(options: FirebaseConfig.webOptions);
-    } else if (defaultTargetPlatform == TargetPlatform.android ||
-               defaultTargetPlatform == TargetPlatform.iOS) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
       await Firebase.initializeApp();
     } else {
       await Firebase.initializeApp(options: FirebaseConfig.desktopOptions);

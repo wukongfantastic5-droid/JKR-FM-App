@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform, debugPrint;
 
 import '../localization.dart';
 import '../services/repair_docx.dart';
@@ -202,10 +202,9 @@ class _PartsToolsScreenState extends State<PartsToolsScreen> {
 
       var savedLocal = false;
       String localPath = '';
-      if (!kIsWeb &&
-          (defaultTargetPlatform == TargetPlatform.windows ||
-              defaultTargetPlatform == TargetPlatform.linux ||
-              defaultTargetPlatform == TargetPlatform.macOS)) {
+      if (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.macOS) {
         final home = Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'];
         if (home != null && home.isNotEmpty) {
           try {
@@ -320,10 +319,9 @@ class _PartsToolsScreenState extends State<PartsToolsScreen> {
 
       var savedLocal = false;
       String localPath = '';
-      if (!kIsWeb &&
-          (defaultTargetPlatform == TargetPlatform.windows ||
-              defaultTargetPlatform == TargetPlatform.linux ||
-              defaultTargetPlatform == TargetPlatform.macOS)) {
+      if (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.macOS) {
         final home = Platform.environment['USERPROFILE'] ??
             Platform.environment['HOME'];
         if (home != null && home.isNotEmpty) {
