@@ -8,10 +8,15 @@ import '../services/repo_service.dart';
 import '../services/doc_deliver.dart';
 import '../widgets/http_error_banner.dart';
 import '../services/excel_service.dart';
+import '../data/asset_floors.dart';
 import 'qr_scan_screen.dart';
 
 class InventoryScreen extends StatefulWidget {
-  const InventoryScreen({super.key});
+  /// When set, the floor filter starts on this floor (e.g. opened from the
+  /// building view tower tap).
+  final String? initialFloor;
+
+  const InventoryScreen({super.key, this.initialFloor});
 
   @override
   State<InventoryScreen> createState() => _InventoryScreenState();
@@ -27,57 +32,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String _floorFilter = '';
   String _typeFilter = '';
 
-  static const _floorOrder = [
-    'L37','L36','L35','L34','L33','L32','L31','L30',
-    'L29','L28','L27','L26','L25','L24','L23','L22','L21','L20',
-    'L19','L18','L17','L16','L15','L14','L13','L12','L11','L10',
-    'L9','L8','L7','L6','L5','L4','L3','L2','L1',
-    'LP1','LM','LB1','LB2',
-  ];
-
-  List<(String value, String label)> get _floorOptions => _floorOrder
-      .map((k) => (k, _floorLabel(k)))
+  List<(String value, String label)> get _floorOptions => assetFloorOrder
+      .map((k) => (k, assetFloorLabel(k)))
       .toList();
-
-  static String _floorLabel(String key) {
-    final z = _floorZone(key);
-    return '${_floorCore(key)}${z.isEmpty ? '' : ' · $z'}';
-  }
-
-  static String _floorCore(String key) {
-    switch (key) {
-      case 'LB1': return 'B1';
-      case 'LB2': return 'B2';
-      case 'LP1': return 'P';
-      case 'LM': return 'M';
-      case 'LG': return 'G';
-      default: return key.replaceAll('L', '');
-    }
-  }
-
-  static String _floorZone(String key) {
-    switch (key) {
-      case 'LB1':
-      case 'LB2':
-        return 'Zon parking bawah tanah';
-      case 'LP1':
-        return 'Plaza - Zon P1/P1A/P2/P2A';
-      case 'LM':
-        return 'Zon P3/P3A/P4/P4A/MEZZ';
-      case 'L1':
-        return 'Zon P5/P5A/P6/P6A';
-      case 'L2':
-        return 'Zon P7/P7A';
-      case 'L3':
-        return 'Zon P8/Kafe';
-      default:
-        return '';
-    }
-  }
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialFloor != null) {
+      _floorFilter = widget.initialFloor!;
+    }
     _load();
   }
 
@@ -122,8 +86,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
   List<MapEntry<String, List<_MeEntry>>> get _sortedFloors {
     final floors = _allData.entries.toList()
       ..sort((a, b) {
-        final ai = _floorOrder.indexOf(a.key);
-        final bi = _floorOrder.indexOf(b.key);
+        final ai = assetFloorOrder.indexOf(a.key);
+        final bi = assetFloorOrder.indexOf(b.key);
         if (ai >= 0 && bi >= 0) return ai.compareTo(bi);
         return a.key.compareTo(b.key);
       });
@@ -442,8 +406,8 @@ class _FloorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final core = _InventoryScreenState._floorCore(floor);
-    final zone = _InventoryScreenState._floorZone(floor);
+    final core = assetFloorCore(floor);
+    final zone = assetFloorZone(floor);
     final total = items.fold(0, (s, e) => s + e.qty);
     items.sort((a, b) => b.qty.compareTo(a.qty));
 

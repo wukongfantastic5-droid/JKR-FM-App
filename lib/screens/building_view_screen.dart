@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import '../localization.dart';
 import '../providers/theme_provider.dart';
 import '../services/repo_service.dart';
-import '../services/complaint_service.dart';
-import '../data/fca_data.dart';
-import 'engineering_demo_screen.dart';
+import '../data/asset_floors.dart';
+import 'inventory_screen.dart';
 
 class BuildingViewScreen extends StatefulWidget {
   const BuildingViewScreen({super.key});
@@ -24,7 +23,7 @@ class _BuildingViewScreenState extends State<BuildingViewScreen> {
   void initState() {
     super.initState();
     _load();
-    // Real-time: refresh complaint statuses while this screen is visible.
+    // Real-time: refresh asset data while this screen is visible.
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) => _load(quiet: true));
   }
 
@@ -36,29 +35,22 @@ class _BuildingViewScreenState extends State<BuildingViewScreen> {
 
   Future<void> _load({bool quiet = false}) async {
     if (!quiet) setState(() => _loading = true);
-    final items = RepoService.fcaItems;
-    final floorMap = <String, List<FcaItem>>{};
-    for (final item in items) {
-      floorMap.putIfAbsent(item.aras, () => []).add(item);
-    }
-
-    // Complaint counts per floor (open / in-progress).
-    final ticketCounts = <String, List<int>>{};
+    final byFloor = <String, List<AssetEntry>>{};
     try {
-      final tickets = await ComplaintService.load();
-      for (final t in tickets) {
-        if (t.status == 'open' || t.status == 'in_progress') {
-          final counts = ticketCounts.putIfAbsent(t.floor, () => [0, 0]);
-          if (t.status == 'open') {
-            counts[0]++;
-          } else {
-            counts[1]++;
-          }
+      final data = await RepoService.readFile('me_assets.json');
+      if (data is Map<String, dynamic>) {
+        for (final entry in data.entries) {
+          final list = (entry.value as List).cast<Map<String, dynamic>>();
+          byFloor[entry.key] = list.map((e) => AssetEntry(
+            system: e['system'] as String? ?? '',
+            type: e['type'] as String,
+            qty: e['qty'] as int,
+          )).toList();
         }
       }
     } catch (_) {}
 
-    final next = _buildFullFloorList(floorMap, ticketCounts);
+    final next = _buildFullFloorList(byFloor);
     if (!mounted) return;
     setState(() {
       _floors = next;
@@ -66,40 +58,21 @@ class _BuildingViewScreenState extends State<BuildingViewScreen> {
     });
   }
 
-  List<FloorInfo> _buildFullFloorList(Map<String, List<FcaItem>> floorMap, Map<String, List<int>> ticketCounts) {
-    final result = <FloorInfo>[];
-
-    // Upper tower floors 37 → 1
-    for (int i = 37; i >= 1; i--) {
-      final key = i.toString();
-      final fcaItems = floorMap[key] ?? [];
-      result.add(_makeFloor(key, fcaItems, ticketCounts[key]));
-    }
-
-    // Lower levels (top to bottom): M, G, P (P1–P7 combined), B1, B2
-    // Actual JKR building setup: tower 1–37, mezzanine M, ground G,
-    // parking podium P1–P7 shown as one "P" band, basement B1 then B2.
-    for (final level in ['M', 'G', 'P', 'B1', 'B2']) {
-      final fcaItems = floorMap[level] ?? [];
-      result.add(_makeFloor(level, fcaItems, ticketCounts[level]));
-    }
-
-    return result;
+  List<FloorInfo> _buildFullFloorList(Map<String, List<AssetEntry>> byFloor) {
+    return [
+      for (final key in assetFloorOrder)
+        _makeFloor(key, byFloor[key] ?? const []),
+    ];
   }
 
-  FloorInfo _makeFloor(String key, List<FcaItem> fcaItems, List<int>? ticketCounts) {
-    final open = fcaItems.where((i) => i.status == 'open').length;
-    final inProgress = fcaItems.where((i) => i.status == 'in_progress').length;
-    final closed = fcaItems.where((i) => i.status == 'closed').length;
-    return FloorInfo(
-      floor: key,
-      open: open,
-      inProgress: inProgress,
-      closed: closed,
-      items: fcaItems,
-      ticketOpen: ticketCounts?[0] ?? 0,
-      ticketInProgress: ticketCounts?[1] ?? 0,
-    );
+  FloorInfo _makeFloor(String key, List<AssetEntry> entries) {
+    var qty = 0;
+    final systems = <String>{};
+    for (final e in entries) {
+      qty += e.qty;
+      if (e.system.isNotEmpty) systems.add(e.system);
+    }
+    return FloorInfo(floor: key, assetQty: qty, systemCount: systems.length);
   }
 
   @override
@@ -109,7 +82,7 @@ class _BuildingViewScreenState extends State<BuildingViewScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(eng ? 'Bangunan JKR (36 Level)' : 'Bangunan JKR (36 Aras)'),
+        title: Text(eng ? 'Bangunan JKR (41 Level)' : 'Bangunan JKR (41 Aras)'),
         actions: [
           IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _load),
         ],
@@ -118,20 +91,46 @@ class _BuildingViewScreenState extends State<BuildingViewScreen> {
         ? const Center(child: CircularProgressIndicator())
         : _floors.isEmpty
           ? Center(child: Text(eng ? 'No floor data' : 'Tiada data aras'))
-          : Stack(
+          : Column(
               children: [
-                _buildTower(eng, isDark),
-                if (!_loading)
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    child: Center(
-                      child: _demoButton(eng: eng),
-                    ),
-                  ),
+                _buildLegend(eng, isDark),
+                Expanded(child: _buildTower(eng, isDark)),
               ],
             ),
+    );
+  }
+
+  Widget _buildLegend(bool eng, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      child: Row(
+        children: [
+          Container(
+            width: 90,
+            height: 12,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              gradient: const LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [Color(0xFFB8D5D6), Color(0xFF0D7377)],
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              eng
+                  ? 'Ketik satu aras untuk lihat asetnya'
+                  : 'Tap a floor to view its assets',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -139,16 +138,19 @@ class _BuildingViewScreenState extends State<BuildingViewScreen> {
 
   Widget _buildTower(bool eng, bool isDark) {
     return SingleChildScrollView(
-        child: GestureDetector(
-          onTapDown: (details) {
-            final y = details.localPosition.dy;
-            final idx = (y / _floorH).floor();
-            if (idx >= 0 && idx < _floors.length) {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => EngineeringDemoScreen(floor: _floors[idx].floor)),
-              ).then((_) => _load(quiet: true));
-            }
-          },
+      child: GestureDetector(
+        onTapDown: (details) {
+          final y = details.localPosition.dy;
+          final idx = (y / _floorH).floor();
+          if (idx >= 0 && idx < _floors.length) {
+            setState(() => _selectedFloorIndex = idx);
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => InventoryScreen(initialFloor: _floors[idx].floor),
+              ),
+            ).then((_) => _load(quiet: true));
+          }
+        },
         child: RepaintBoundary(
           child: SizedBox(
             height: _floors.length * _floorH,
@@ -164,59 +166,24 @@ class _BuildingViewScreenState extends State<BuildingViewScreen> {
           ),
         ),
       ),
-     );
-   }
+    );
+  }
+}
 
-   Widget _demoButton({required bool eng}) {
-     return GestureDetector(
-       onTap: () => Navigator.of(context).push(
-         MaterialPageRoute(builder: (_) => const EngineeringDemoScreen(floor: '34')),
-       ),
-       child: Container(
-         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-         decoration: BoxDecoration(
-           color: const Color(0xFF0D7377).withValues(alpha: 0.9),
-           borderRadius: const BorderRadius.only(
-             topRight: Radius.circular(12),
-             bottomRight: Radius.circular(12),
-           ),
-           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(2, 2))],
-         ),
-         child: RotatedBox(
-           quarterTurns: 3,
-           child: Row(
-             mainAxisSize: MainAxisSize.min,
-             children: [
-               const Icon(Icons.grid_on_rounded, color: Colors.white, size: 16),
-               const SizedBox(width: 6),
-               Text(eng ? 'CAD DEMO' : 'DEMO CAD',
-                 style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1)),
-             ],
-           ),
-         ),
-       ),
-     );
-   }
- }
+class AssetEntry {
+  final String system;
+  final String type;
+  final int qty;
+
+  const AssetEntry({this.system = '', required this.type, required this.qty});
+}
 
 class FloorInfo {
   final String floor;
-  final int open;
-  final int inProgress;
-  final int closed;
-  final int ticketOpen;
-  final int ticketInProgress;
-  final List<FcaItem> items;
+  final int assetQty;
+  final int systemCount;
 
-  FloorInfo({
-    required this.floor,
-    required this.open,
-    required this.inProgress,
-    required this.closed,
-    required this.items,
-    this.ticketOpen = 0,
-    this.ticketInProgress = 0,
-  });
+  FloorInfo({required this.floor, required this.assetQty, required this.systemCount});
 }
 
 class _TowerPainter extends CustomPainter {
@@ -278,20 +245,24 @@ class _TowerPainter extends CustomPainter {
       isDark ? _skyDark : _skyLight,
     );
 
+    var maxQty = 0;
+    for (final f in floors) {
+      if (f.assetQty > maxQty) maxQty = f.assetQty;
+    }
+    if (maxQty == 0) maxQty = 1;
+
     for (int i = 0; i < floors.length; i++) {
       final info = floors[i];
       final y = i * floorH;
       final rect = Rect.fromLTWH(offsetX, y, buildingW, floorH - 1);
 
-      final base = info.ticketOpen > 0
-        ? const Color(0xFFEF4444)
-        : info.ticketInProgress > 0
-          ? const Color(0xFFF59E0B)
-          : info.open > 0
-            ? const Color(0xFFEF4444)
-            : info.inProgress > 0
-              ? const Color(0xFFF59E0B)
-              : const Color(0xFF22C55E);
+      final Color base;
+      if (info.assetQty == 0) {
+        base = isDark ? const Color(0xFF3A4356) : const Color(0xFFC4CDD6);
+      } else {
+        final f = (info.assetQty / maxQty).clamp(0.15, 1.0);
+        base = Color.lerp(const Color(0xFF7FB3B6), const Color(0xFF0D7377), f)!;
+      }
 
       canvas.drawRRect(
         RRect.fromRectAndRadius(rect, const Radius.circular(2)),
@@ -306,45 +277,75 @@ class _TowerPainter extends CustomPainter {
         );
       }
 
-      // Floor label INSIDE the band, centered
-      final tp = TextPainter(
+      // Floor label inside the band: core (bold) + zone hint (tiny)
+      final core = assetFloorCore(info.floor);
+      final zone = assetFloorZone(info.floor);
+      final coreTp = TextPainter(
         text: TextSpan(
-          text: info.floor,
+          text: core,
           style: TextStyle(
-            color: i == selectedIdx ? Colors.white : Colors.white.withValues(alpha: 0.85),
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
+            color: Colors.white,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
             shadows: const [Shadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
           ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      tp.paint(
+      final zoneTp = TextPainter(
+        text: TextSpan(
+          text: zone,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.85),
+            fontSize: 7.5,
+            fontWeight: FontWeight.w500,
+            overflow: TextOverflow.ellipsis,
+            shadows: const [Shadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: buildingW * 0.55);
+      final labelH = coreTp.height + zoneTp.height;
+      coreTp.paint(
         canvas,
         Offset(
-          offsetX + (buildingW - tp.width) / 2,
-          y + (floorH - tp.height) / 2 - 1,
+          offsetX + (buildingW - coreTp.width) / 2,
+          y + (floorH - labelH) / 2 - 1,
+        ),
+      );
+      zoneTp.paint(
+        canvas,
+        Offset(
+          offsetX + (buildingW - zoneTp.width) / 2,
+          y + (floorH - labelH) / 2 + coreTp.height - 1,
         ),
       );
 
-      // Complaint count badge on the right edge of the band.
-      final ticketCount = info.ticketOpen + info.ticketInProgress;
-      if (ticketCount > 0) {
-        final badge = TextPainter(
+      // Asset quantity chip on the right edge of the band.
+      if (info.assetQty > 0) {
+        final qtyTp = TextPainter(
           text: TextSpan(
-            text: '● $ticketCount',
+            text: '${info.assetQty}',
             style: TextStyle(
-              color: info.ticketOpen > 0 ? const Color(0xFFFFE3E3) : const Color(0xFFFFF3D6),
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
+              color: const Color(0xFF0D7377),
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
             ),
           ),
           textDirection: TextDirection.ltr,
         )..layout();
-        badge.paint(
-          canvas,
-          Offset(offsetX + buildingW - badge.width - 6, y + (floorH - badge.height) / 2),
+        final chipW = qtyTp.width + 12;
+        final chipH = 16.0;
+        final chipX = offsetX + buildingW - chipW - 5;
+        final chipY = y + (floorH - chipH) / 2;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(chipX, chipY, chipW, chipH),
+            const Radius.circular(8),
+          ),
+          Paint()..color = Colors.white.withValues(alpha: 0.92),
         );
+        qtyTp.paint(canvas, Offset(chipX + 6, chipY + (chipH - qtyTp.height) / 2));
       }
     }
 
