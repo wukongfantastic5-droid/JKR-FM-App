@@ -4,7 +4,7 @@ import '../localization.dart';
 import '../providers/theme_provider.dart';
 import '../services/repo_service.dart';
 import '../data/asset_floors.dart';
-import 'inventory_screen.dart';
+import 'top_view_screen.dart';
 
 class BuildingViewScreen extends StatefulWidget {
   const BuildingViewScreen({super.key});
@@ -146,7 +146,7 @@ class _BuildingViewScreenState extends State<BuildingViewScreen> {
             setState(() => _selectedFloorIndex = idx);
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => InventoryScreen(initialFloor: _floors[idx].floor),
+                builder: (_) => TopViewScreen(floorKey: _floors[idx].floor),
               ),
             ).then((_) => _load(quiet: true));
           }
