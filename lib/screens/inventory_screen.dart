@@ -35,6 +35,46 @@ class _InventoryScreenState extends State<InventoryScreen> {
     'LP1','LM','LB1','LB2',
   ];
 
+  List<(String value, String label)> get _floorOptions => _floorOrder
+      .map((k) => (k, _floorLabel(k)))
+      .toList();
+
+  static String _floorLabel(String key) {
+    final z = _floorZone(key);
+    return '${_floorCore(key)}${z.isEmpty ? '' : ' · $z'}';
+  }
+
+  static String _floorCore(String key) {
+    switch (key) {
+      case 'LB1': return 'B1';
+      case 'LB2': return 'B2';
+      case 'LP1': return 'P';
+      case 'LM': return 'M';
+      case 'LG': return 'G';
+      default: return key.replaceAll('L', '');
+    }
+  }
+
+  static String _floorZone(String key) {
+    switch (key) {
+      case 'LB1':
+      case 'LB2':
+        return 'Zon parking bawah tanah';
+      case 'LP1':
+        return 'Plaza - Zon P1/P1A/P2/P2A';
+      case 'LM':
+        return 'Zon P3/P3A/P4/P4A/MEZZ';
+      case 'L1':
+        return 'Zon P5/P5A/P6/P6A';
+      case 'L2':
+        return 'Zon P7/P7A';
+      case 'L3':
+        return 'Zon P8/Kafe';
+      default:
+        return '';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -297,17 +337,26 @@ class _InventoryScreenState extends State<InventoryScreen> {
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(children: [
-          _filterChip(eng ? 'Floor' : 'Aras', _floorFilter, _floorOrder, (v) => setState(() => _floorFilter = v ?? '')),
+          _filterChip(eng ? 'Floor' : 'Aras', _floorFilter, _floorOptions, (v) => setState(() => _floorFilter = v ?? '')),
           const SizedBox(width: 8),
-          _filterChip(eng ? 'Type' : 'Jenis', _typeFilter, types, (v) => setState(() => _typeFilter = v ?? '')),
+          _filterChip(eng ? 'Type' : 'Jenis', _typeFilter, types.map((t) => (t, t)).toList(), (v) => setState(() => _typeFilter = v ?? '')),
         ]),
       ),
     );
   }
 
-  Widget _filterChip(String label, String current, List<String> options, ValueSetter<String?> onSelected) {
+  Widget _filterChip(String label, String current, List<(String value, String label)> options, ValueSetter<String?> onSelected) {
+    var cur = label;
+    if (current.isNotEmpty) {
+      for (final o in options) {
+        if (o.$1 == current) {
+          cur = o.$2;
+          break;
+        }
+      }
+    }
     return FilterChip(
-      label: Text(current.isEmpty ? label : current),
+      label: Text(current.isEmpty ? label : cur),
       selected: current.isNotEmpty,
       onSelected: (_) {
         if (current.isNotEmpty) {
@@ -316,7 +365,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           showMenu<String>(
             context: context,
             position: RelativeRect.fromLTRB(100, 200, 100, 200),
-            items: options.map((o) => PopupMenuItem(value: o, child: Text(o))).toList(),
+            items: options.map((o) => PopupMenuItem(value: o.$1, child: Text(o.$2))).toList(),
           ).then(onSelected);
         }
       },
@@ -393,7 +442,8 @@ class _FloorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final floorNum = floor.replaceAll('L', '');
+    final core = _InventoryScreenState._floorCore(floor);
+    final zone = _InventoryScreenState._floorZone(floor);
     final total = items.fold(0, (s, e) => s + e.qty);
     items.sort((a, b) => b.qty.compareTo(a.qty));
 
@@ -439,7 +489,7 @@ class _FloorCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Center(
-            child: Text(floorNum,
+            child: Text(core,
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w800,
@@ -450,9 +500,22 @@ class _FloorCard extends StatelessWidget {
         ),
         title: Row(
           children: [
-            Text(eng ? 'Floor $floorNum' : 'Aras $floorNum',
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-            const Spacer(),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(eng ? 'Floor $core' : 'Aras $core',
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                  if (zone.isNotEmpty)
+                    Text(zone,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                        color: Theme.of(context).colorScheme.outline,
+                      )),
+                ],
+              ),
+            ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
               decoration: BoxDecoration(
@@ -489,11 +552,73 @@ class _FloorCard extends StatelessWidget {
                 ],
               ),
             ),
-            ...groups[key]!.map((e) => _assetRow(e, context)),
+            _zonedRows(groups[key]!, eng, context),
           ],
         ],
       ),
     );
+  }
+
+  Widget _zonedRows(List<_MeEntry> entries, bool eng, BuildContext context) {
+    const zoneOrder = [
+      '', 'MEZZ', 'PLAZA', 'P1', 'P1A', 'P2', 'P2A', 'P3', 'P3A',
+      'P4', 'P4A', 'P5', 'P5A', 'P6', 'P6A', 'P7', 'P7A', 'P8',
+    ];
+    int rank(String z) {
+      final i = zoneOrder.indexOf(z);
+      return i < 0 ? 99 : i;
+    }
+
+    final byZone = <String, List<_MeEntry>>{};
+    for (final e in entries) {
+      final z = _zoneOfType(e.type);
+      byZone.putIfAbsent(z, () => []).add(e);
+    }
+    final zones = byZone.keys.toList()..sort((a, b) => rank(a).compareTo(rank(b)));
+    if (zones.length <= 1) {
+      return Column(children: entries.map((e) => _assetRow(e, context)).toList());
+    }
+
+    final out = <Widget>[];
+    for (final z in zones) {
+      out.add(Padding(
+        padding: const EdgeInsets.only(top: 4, bottom: 2),
+        child: Row(
+          children: [
+            Container(
+              width: 3, height: 12,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondary,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(z.isEmpty ? (eng ? 'General' : 'Umum') : 'ZON $z',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+                color: Theme.of(context).colorScheme.secondary,
+              )),
+          ],
+        ),
+      ));
+      out.addAll(byZone[z]!.map((e) => _assetRow(e, context)));
+    }
+    return Column(children: out);
+  }
+
+  static String _zoneOfType(String type) {
+    for (final p in const ['ABC DRY POWDER', 'CO2']) {
+      if (type.startsWith('$p ')) {
+        final rest = type.substring(p.length + 1).trim();
+        if (RegExp(r'^(P\d{0,2}A?|PLAZA|MEZZ|CAFE L\d{1,2})$').hasMatch(rest)) {
+          return rest;
+        }
+        return '';
+      }
+    }
+    return '';
   }
 
   Widget _assetRow(_MeEntry e, BuildContext context) {
